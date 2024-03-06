@@ -1,35 +1,48 @@
 (ns read-books.main
   (:gen-class)
   (:require [ring.adapter.jetty :refer [run-jetty]]
-            [ring.util.response :refer [response]]
+            [ring.util.response :refer [response redirect]]
             [ring.middleware.params :refer [wrap-params]]
             [ring.middleware.multipart-params :refer [wrap-multipart-params]]
             [ring.middleware.session :refer [wrap-session]]
-            [ring.middleware.resource :refer [wrap-resource]]
             [ring.middleware.stacktrace :refer [wrap-stacktrace]]
             [compojure.core :refer [defroutes POST GET]]
             [compojure.route :as route]
-            [read-books.epub :as epub])
-  (:import [java.io FileNotFoundException]))
+            [read-books.epub :as epub]
+            [hiccup.core :as h]
+            [hiccup.form :as form]))
 
 (defonce server (atom nil))
 
 (defroutes app
 
+  (GET "/" []
+    (response
+     (h/html
+         [:div
+          [:h1 "Select an epub file"]
+          (form/form-to
+           {:enctype "multipart/form-data"}
+           [:post "/epub/upload"]
+           (form/file-upload "epub")
+           (form/submit-button "Send"))])))
+
   (POST "/epub/upload" req
-    (let [file (get-in req [:params "file"])]
-      (-> (response "ok")
+    (let [file (get-in req [:params "epub"])]
+      (-> (redirect "/epub/content")
           (assoc :session file))))
 
-  (GET "/epub/name" req
-    (let [file (-> req :session :tempfile)]
-      (response {:name (.getName file)})))
+  (GET "/epub/content" {session :session}
+    (let [file (:tempfile session)]
+      (response
+       (-> file
+           epub/load-epub
+           epub/list-content-as-hiccup
+           h/html))))
 
-  (GET "/epub/content" req
-    (let [file (get-in req [:params "file"])]
-      (when-not file
-        (throw (FileNotFoundException. "epub file not found")))
-      (epub/list-content-as-html (epub/load-epub (:tempfile file)))))
+  (GET "/epub/:page" [page]
+    ;; TODO: return the html content of the page
+    (response page))
 
   (route/not-found "<h1>Page not found</h1>"))
 
@@ -37,8 +50,7 @@
                  wrap-stacktrace
                  wrap-session
                  wrap-params
-                 wrap-multipart-params
-                 (wrap-resource "public")))
+                 wrap-multipart-params))
 
 (defn start-server
   ([]

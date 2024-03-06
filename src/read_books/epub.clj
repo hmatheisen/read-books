@@ -2,8 +2,7 @@
   (:import [java.util.zip ZipFile ZipEntry]
            [java.io File])
   (:require [clojure.data.xml :as xml]
-            [clojure.string :as str]
-            [hiccup2.core :as h]))
+            [clojure.string :as str]))
 
 (def ^:const container-path "META-INF/container.xml")
 (def ^:const mimetype-path "mimetype")
@@ -14,7 +13,7 @@
   "Parse a `ZipEntry`.
   - returns an xml map file extension is xml or opf
   - returns a string otherwise"
-  (fn [^ZipEntry entry]
+  (fn [^ZipEntry entry _]
     (last (str/split (.getName entry) #"\."))))
 (defmethod parse-entry "xml"
   [entry ^ZipFile epub]
@@ -93,10 +92,10 @@
   [idref rootfile]
   (get-attr (item-find-by-idref idref rootfile) :href))
 
-(defn item-as-html
+(defn item-as-hiccup
   [idref rootfile]
   (let [href (item-find-href idref rootfile)]
-    (str (h/html [:a {:href href} idref]))))
+    [:a {:href href} idref]))
 
 ;; EPUB
 (defn load-epub
@@ -110,11 +109,19 @@
                        :found-mimetype mimetype-entry})))
     zip-file))
 
-(defn list-content-as-html
+(defn list-content-as-hiccup
   [epub]
   (let [rootfiles-path (list-rootfiles-path epub)
-        rootfiles (map #(find-entry epub %) rootfiles-path)]
-    (pmap (fn [rootfile]
-            (map #(item-as-html % rootfile)
-                 (rootfile-content rootfile)))
-          rootfiles)))
+        rootfiles (map #(find-entry epub %) rootfiles-path)
+        rootfile-as-hiccup (fn [rootfile]
+                             (into [:div [:h1 (rootfile-title rootfile)]]
+                                   (interpose
+                                    [:br]
+                                    (map #(item-as-hiccup % rootfile)
+                                         (rootfile-content rootfile)))))]
+    (into [:div] (map rootfile-as-hiccup rootfiles))))
+
+(comment
+  (-> (clojure.java.io/file "test/moby-dick.epub")
+      load-epub
+      list-content-as-hiccup))
